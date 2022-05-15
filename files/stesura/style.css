@@ -1,0 +1,21 @@
+a{color: #4e89bf;}
+
+p{
+	font-size: 12pt;
+}
+/* darker color when hovering */
+a:hover{
+    color: #396892;}
+   
+.logo{
+  margin-top: 20px;
+  background-image: url("https://biblioteca.ucm.es/data/cont/media/www/pag-123043/Marca%20UCM%20Alternativa%20logo%20negro%20RGB.jpg");
+  height: 150px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.book .book-body .page-inner {
+    max-width: 1500px;
+}
