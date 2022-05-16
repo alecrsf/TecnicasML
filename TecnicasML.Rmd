@@ -39,7 +39,8 @@ knitr::opts_chunk$set(
 	comment = "r >",
 	digits = 3)
 
-#knitr::write_bib(x=c("caret","ggplot2","rpart", "randomForest", "gbm", "xgboost"), file = "knitcitations.bib")
+#knitr::write_bib(x=c("caret","ggplot2","rpart", "e1071", "randomForest", "gbm", "xgboost", "doParallel", "adabag", "caretEnsemble", "pROC"), 
+#			file = "files/stesura/knitcitations.bib")
 
 load("Workspace.RData")
 pacman::p_load(tidyverse, magrittr, caret, rpart, randomForest, gbm, xgboost, kableExtra, pROC, doParallel, tictoc)
@@ -102,24 +103,27 @@ En esta etapa, me dí cuenta que los datos tenían un problema de desbalanceo en
 
 Una vez que los datos estaban listos, he empezado la modelización del **árbol de decisión**, **bagging**, **random forest**, **gradient boosting machine (GBM)** y **extreme gradient boosting machine (XGBM)**. Para cada técnica, mi flujo de trabajo ha sido lo siguiente:
 
-1. Tunear los parámetros de cada modelo, con la función `train` del paquete `caret`, empleando un bucle cuando la función no permite el control de unos parámetros.
+1. Tunear los parámetros de cada modelo, con la función `train` del paquete `caret`, empleando un bucle cuando la función no permite el control de unos parámetros y utilizando *computación paralela* sobre tres procesadores.
 2. Entender el andamiento del ajuste para los distintos parámetros tuneados a través unos gráficos.
 
       -    Además para el bagging y random forest he visualizado el *error de out-of-bag*, para entender el andamiento a medida que aumentaban las interacciones de los árboles. A través este gráfico he podido reducir la complejidad de mi modelo final.
 
 Después haber elegido los parámetros mejores, he ajustado el modelo final, visualizando la *matriz de confusión* y las *variables más influyentes* para cada modelo.
 
-Una vez ajustadas las técnicas de árboles, he ajustado otra vez los modelos con *validación cruzada repetida* esta vez, para comparar las respectivas *tasa de fallo* y la *area abajo la curva ROC*, a través de un grafo de caja y bigote incluyendo como modelo de referencia, una *regresión logística*.
+Una vez ajustadas las técnicas de árboles, he ajustado otra vez los modelos con *validación cruzada repetida* esta vez, para comparar las respectivas *tasa de fallo* y la *área abajo la curva ROC*, a través de un grafo de caja y bigote incluyendo como modelo de referencia una *regresión logística*.
 
-Una vez encontrado el modelo ganador, he decidido crear un grafo de barras apiladas para obtener las variables más influyentes según los distintos modelos. A partir de estas, he creado un nuevo conjunto *entrenamiento/test*, con el cúal voy a realizar otras técnicas de aprendizaje automatico:
+Una vez encontrado el modelo ganador, he decidido crear un grafo de barras apiladas para obtener las variables más influyentes según los distintos modelos. A partir de estas, he creado un nuevo conjunto *entrenamiento/test*, con el cual voy a realizar otras técnicas de aprendizaje automático:
 
-- Suppor Vector Machine, con kernel:
-    - Líneal
-    - Polynomial
-    - Radial
-- Bagging del SVM Líneal
-- Boosting
-- Stacking
+- **Support Vector Machines**, con kernel:
+    - *Lineal*
+    - *Polynomial*
+    - *Radial*
+- **Bagging** del SVM Lineal
+- **Boosting**
+- **Stacking** de:
+    - *Gradient Boosting Machine*
+    - *SVM Radial*
+    - *XGBoost*
 
 ***
 # Descripción de los datos
@@ -535,9 +539,7 @@ kable(table(upTrain$attrition),
 ***
 # Ajuste del Modelo
 ## Remuestreo
-Primero, para comprobar la validez de los resultados del modelo, voy a emplear **validación cruzada**; esta técnica me va a garantir que los resultados son independientes de la partición de los datos entre entrenamiento y prueba, a través el uso de 5 subconjuntos aleatorios.
-
-Para la reproducibilidad de estos algoritmos, he fijado la semilla de aleatorización.
+Primero, para comprobar la validez de los resultados del modelo, voy a emplear **validación cruzada**; esta técnica me va a garantir que los resultados son independientes de la partición de los datos entre entrenamiento y prueba, a través el uso de 5 subconjuntos aleatorios. Para la reproducibilidad de estos algoritmos, he fijado la semilla de aleatorización.
 ```{r}
 set.seed(112)
 control <- trainControl(
@@ -1966,13 +1968,18 @@ toc() #5.84min (15.1 min con todas las variables)
 stopCluster(cpu)
 ```
 
+Visualizamos los resultados del tuneo:
 ```{r}
 cbind(svm_lin_result$bestTune, getTrainPerf(svm_lin)) %>%
     kable(format = "html", bootstrap_options = "basic",
     			caption = "Best Tune",
     			digits = 3) 
 
-plot(svm_lin_result, output = "ggplot")
+ggplot(svm_lin_result) + geom_line(colour = "#2E45B8", size = 0.8) + geom_point(colour= "#5670C0") + hrbrthemes::theme_ipsum(ticks = T,
+    base_family = "Times", base_size = 12) + labs(title = "Tuning Results", subtitle = "SVM Lineal") +
+    theme(legend.position = "none", panel.background = element_rect(color = "#3b454a"),
+        title = element_text(face = "bold"), axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(colour = "#3D3D3D", size = 12))
 ```
 
 #### Modelo Final
@@ -1998,20 +2005,21 @@ roc(svm_lin$pred$obs,
 		svm_lin$pred$Yes) %>%
     ggroc(colour = "#2E45B8", size = 0.8) + annotate("text", x = 0.08, y = 0.88,
     label = "bold(AUC): 0.827", family = "Times", parse = TRUE) + hrbrthemes::theme_ipsum(ticks = T,
-    base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "SVM Lineal") +
-    theme(legend.position = "none", panel.background = element_rect(color = "#3b454a"),
-        title = element_text(face = "bold"), axis.title.y = element_text(size = 10),
-        axis.text.x = element_text(face = "bold", colour = "#3D3D3D", size = 10))
+    base_family = "Times", base_size = 12) + labs(title = "ROC Curve", subtitle = "SVM Lineal") + theme(legend.position = "none", panel.background = element_rect(color = "#3b454a"),
+        title = element_text(face = "bold"), axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(colour = "#3D3D3D", size = 12))
 ```
 
+Entre los modelos empleados hasta ahora, no aporta buenas métricas. Vamos a construir una *maquina de suporte vectorial* con un kernel más complejo. 
+
 ### SVM Polinomial
-```{r}
+```{r svm_poly_descr}
 library(kableExtra)
 modelLookup("svmPoly")[2:3] %>%
     cbind(description = linebreak(c(
-    	"Degree needed for the kernel of type polynomial.",
-      " .",
-      "El Parámetro de Regularización (C), la constante C del término de regularización en la formulación de Lagrange, indica a la maquina de suporte cuánto evitar la clasificación errónea de cada ejemplo de entrenamiento."))) %>%
+    	"El grado de la fúncion polinomial",
+      "El parametro que ajusta el kernel a la hora de dividir las predicciones",
+      "El parámetro de regularización (C), la constante C del término de regularización en la formulación de Lagrange, indica a la maquina de suporte cuánto evitar la clasificación errónea de cada ejemplo de entrenamiento."))) %>%
     kable(format = "html", align = c(rep("l", 3)), caption = "Descripcion de los parámetros en SVM Polinomial") %>%
     row_spec(0, font_size = 14) %>%
     column_spec(1,width = 12, monospace = T) %>% 
@@ -2037,14 +2045,34 @@ toc() #18.45 min
 stopCluster(cpu)
 ```
 
-```{r}
+Esta tabla nos dice cual han sido los parámetros mejores: 
+```{r svm_poly_best_tune}
 cbind(svm_poly_result$bestTune, getTrainPerf(svm_poly)) %>%
     kable(format = "html", bootstrap_options = "basic",
     			caption = "Best Tune",
     			digits = 3) 
 
-plot(svm_poly_result, output = "ggplot")
+plot(
+	svm_poly_result,
+	output = "ggplot",
+	"line",
+	layout = c(2, 1),
+	par.settings = list(
+		superpose.line = list(
+			lwd = 1,
+			col = c("#D6DBF5", "#5670C0", "#2E45B8", "#2A788E")
+		),
+		superpose.symbol = list(
+			pch = 19,
+			cex = 0.6,
+			col = c("#D6DBF5", "#5670C0", "#2E45B8", "#2A788E")
+		),
+		strip.background = list(col = "#D6DBF5")
+	)
+)
 ```
+
+También es importante una constatación visual del tuneo. Podemos ver que la máxima accuracy se alcanza con un grado de 3, mejorando mucho el grado 2. Me parece normal como el conjunto de datos tiene muchas variables. El ajuste del kernel mejor es el 2, aunque con un polinómico de 3 grados es suficiente un valor entre 0.5 y 1
 
 #### Modelo Final
 ```{r svm_poly, eval=FALSE}
@@ -2063,20 +2091,23 @@ svm_poly <- train(
 ```{r, fig.show="hold", out.width="50%", fig.cap="SVM Polinomial", fig.subcap=c("Matriz de Confusion", "ROC curve")}
 draw_confusion_matrix(
 	confusionMatrix(svm_poly$pred$pred,
-									svm_poly$pred$pred),
+									svm_poly$pred$obs),
 	"#D6DBF5","#2E45B8")
 
 roc(svm_poly$pred$obs,
 		svm_poly$pred$Yes) %>%
     ggroc(colour = "#2E45B8", size = 0.63) + annotate("text", x = 0.08, y = 0.92,
     label = "bold(AUC): 0.97", family = "Times", parse = TRUE) + hrbrthemes::theme_ipsum(ticks = T,
-    base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "SVM Lineal") +
+    base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "SVM Polinomial") +
     theme(legend.position = "none", panel.background = element_rect(color = "#3b454a"),
         title = element_text(face = "bold"), axis.title.y = element_text(size = 10),
         axis.text.x = element_text(face = "bold", colour = "#3D3D3D", size = 10))
 ```
 
+La maquina de suporte vectorial con kernel polinómico mejora mucho la con kernel lineal. Con un accuracy de 0.95 y *AUC* de 0.97 es uno de los mejores modelos ajustados hasta ahora.
+
 ### SVM Radial
+Vamos a ajustar la última de las maquinas de suporte vectorial. Esta vez, entre los parámetros a tunear, encontramos como siempre el parámetro de regularización y *sigma*, que determina el alcance de una sola instancia de entrenamiento.
 
 #### Tuneo del Modelo
 ```{r svm_rad_result, eval=FALSE}
@@ -2097,13 +2128,17 @@ toc() #10.71 min
 stopCluster(cpu)
 ```
 
+Estos son los parámetros mejores:
 ```{r}
 cbind(svm_rad_result$bestTune, 
 			getTrainPerf(svm_rad_result)) %>%
     kable(format = "html", bootstrap_options = "basic",
     			caption = "Best Tune",
-    			digits = 3) 
+    			digits = 3)
+```
 
+Ahora vemos como ha mejorado el tuneo dependiendo del valor de su *sigma*.
+```{r}
 ggplot(subset(
 	svm_rad_result$results),
 aes(x=sigma, 
@@ -2113,6 +2148,8 @@ aes(x=sigma,
 geom_step() + geom_point(size=0.8, shape=3) +
 	theme_minimal(base_family = 'Times')
 ```
+
+Se puede observar como a partir de un coste de regularización igual a 1, la maxima accuracy se puede alcanzar con un valor de sigma entre 2 y 5.
 
 #### Modelo Final
 ```{r, eval=FALSE}
@@ -2135,16 +2172,27 @@ draw_confusion_matrix(
 	"#D6DBF5","#2E45B8")
 
 roc(svm_rad$pred$obs,
-		svm_rad$pred$Yes)%>%
-    ggroc(colour = "#2E45B8", size = 0.5) + annotate("text", x = 0.08, y = 0.75,
+		svm_rad$pred$Yes) %>%
+    ggroc(colour = "#2E45B8", size = 0.5) +
+	annotate("text", x = 0.08, y = 0.75,
     label = "bold(AUC): 0.998", family = "Times", parse = TRUE) + hrbrthemes::theme_ipsum(ticks = T,
-    base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "SVM Lineal") +
+    base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "SVM Radial") +
     theme(legend.position = "none", panel.background = element_rect(color = "#3b454a"),
         title = element_text(face = "bold"), axis.title.y = element_text(size = 10),
         axis.text.x = element_text(face = "bold", colour = "#3D3D3D", size = 10))
 ```
 
+Esta *maquina de suporte vectorial con kernel radial* alcanza las mejores métricas sobre estos datos: 
+- Accuracy 0.998 
+- *AUC* 0.998
+
+Hay que tener en cuenta siempre que estos datos son ficticios, entonces no ha sido tan difícil encontrar métricas tan alta.
+
 ## Bagging SVM
+
+Para emplear el **bagging** del SVM he construido una función que me ha permitido hacer las computaciones mas rápidas a través de un bucle paralelizado que computa tantas muestras cuantas quiero, ajustando mi mejor modelo SVM lineal identificado antes y que devuelve un vector con las predicciones promediadas a partir de las filas de las distintas predicciones de los modelos sobre cada muestra.
+
+Lo interesante de esta implementación es que puedo controlar cada parámetro de este algoritmo y también puedo sustituir el *weak learner* (en este caso, es el *SVM lineal* del paquete `e1071`) para realizar el bagging con otros modelos. Además la implementación en paralelo permite de realizar el algoritmo rápidamente y no pesa la cache en cuanto solo el vector final con las predicciones está guardado. 
 
 ```{r}
 library(e1071)
@@ -2191,8 +2239,8 @@ return(rowMeans(predictions))
 }
 ```
 
-returning the predictions for the test data for each of the trees
 
+Ahora implemento la función con 1000 submuestras, he realizado varías pruebas con diferentes dimensiones de muestras y este valor debería ser suficiente para establecer el error. El tamaño de cada submuestra es el 60% de los datos iniciales. 
 
 ```{r, eval=FALSE}
 bagging_svm <- BaggingSVM_Lin(
@@ -2202,19 +2250,45 @@ bagging_svm <- BaggingSVM_Lin(
 	cost = 0.01)
 ```
 
-
-```{r}
-list(
+Ahora comparamos el modelo final *ensemble* con el modelo de *SVM* lineal, a través de la curva ROC.
+```{r B_SVM_ROC, }
+roc.list <- list(
 	`Bagging SVM` = roc(Test2$attrition, bagging_svm),
 	SVM = roc(svm_lin$pred$obs,
 						svm_lin$pred$Yes)
-) %>%
-	ggroc(size = 0.7, alpha = 0.9) +
+)
+
+
+ci.list <- lapply(list(
+	`Bagging SVM` = roc(Test2$attrition, bagging_svm),
+	SVM = roc(svm_lin$pred$obs,
+						svm_lin$pred$Yes)
+),
+ci.se,
+specificities = seq(0, 1, l = 25))
+
+dat.ci.list <- lapply(ci.list, function(ciobj)
+	data.frame(
+		x = as.numeric(rownames(ciobj)),
+		lower = ciobj[, 1],
+		upper = ciobj[, 3]
+	))
+
+p <- ggroc(roc.list,size = 0.7, alpha = 0.9) +
 	scale_color_manual(name = NULL,
-										 values = c(`Bagging SVM` = "#2E45B8",
-										 					 SVM = "#9EA9E0")) + 
-	hrbrthemes::theme_ipsum(
-		ticks = T, base_family = "Times", base_size = 10) + labs(title = "ROC Curve", subtitle = "Comparing ROC curves for single models and Stacking") +
+										 values = c(
+										 	`Bagging SVM` = "#9EA9E0",
+										 	SVM = "#2E45B8")) +
+	hrbrthemes::theme_ipsum(ticks = T,
+													base_family = "Times",
+													base_size = 10) + labs(title = "ROC Curve", subtitle = "Comparing ROC curves for single models and Stacking") +
+	geom_abline(
+		slope = 1,
+		intercept = 1,
+		linetype = "dashed",
+		alpha = 0.7,
+		color = "grey"
+	) +
 	ylab("Sensitivity") + xlab("Specificity") + annotate(
 		"rect",
 		xmin = 0.25,
@@ -2226,8 +2300,8 @@ list(
 		"text",
 		x = 0.13,
 		y = 0.18,
-		label = "bold(AUC): 0.99",
-		colour = "#2E45B8",
+		label = "bold(AUC): 0.81",
+		colour = "#9EA9E0",
 		family = "Times",
 		parse = TRUE
 	) +
@@ -2235,8 +2309,8 @@ list(
 		"text",
 		x = 0.13,
 		y = 0.08,
-		colour = "#6677CC",
-		label = "bold(AUC): 0.99",
+		colour = "#2E45B8",
+		label = "bold(AUC): 0.82",
 		family = "Times",
 		parse = TRUE
 	) + theme(
@@ -2244,15 +2318,45 @@ list(
 		plot.margin = unit(c(1,
 												 1, 0.1, 0.1), "cm"),
 		legend.title = element_blank(),
-		legend.text = element_text(size = 10),
+		legend.text = element_text(size = 12),
 		legend.position = "top",
 		panel.background = element_rect(color = "#3b454a"),
 		title = element_text(face = "bold")
 	)
+
+for (i in 1:2) {
+	if (i == 1) {
+		col = '#2E45B8'
+	  a = 0.2 }
+	else {
+		col = "#2E45B8"
+		a = 0.5}
+	p <- p + geom_ribbon(
+		data = dat.ci.list[[i]],
+		aes(x = x, ymin = lower, ymax = upper),
+		fill = col,
+		alpha = a,
+		inherit.aes = F
+	)
+}
+p
+rm(dat.ci.list,ci.list, roc.list, p)
+``` 
+
+Se puede observar que, aunque los valores de la *área abajo de la curva ROC* están parecidos, el modelo *ensemble* no aporta mejorías a el modelo simple.  
+
+
+```{r, eval=FALSE, include=FALSE}
+# Get accuracy 
+confusionMatrix(as.factor(
+	ifelse(bagging_svm >= .5, 
+				 'Yes', 'No')),
+	Test2$attrition)
 ```
 
 
 ## Boosting
+Para realizar el **boosting** el flujo de trabajo es parecido a los demás. Se empieza con el tuneo.
 ### Tuneo del Modelo
 ```{r, eval=FALSE}
 registerDoParallel(makeCluster(3) -> cpu) 
@@ -2272,12 +2376,25 @@ toc() #10.71 min elapsed
 stopCluster(cpu)
 ```
 
+Observamos en la tabla los resultados:
 ```{r}
 cbind(boost_result$bestTune, getTrainPerf(boost_result)) %>%
     kable(format = "html", bootstrap_options = "basic",caption = "Best Tune",digits = 3) 
 
-plot(boost_result, output='ggplot')
+plot(boost_result, 	output = "ggplot",
+	"line",
+	par.settings = list(
+		superpose.line = list(
+			lwd = 1,
+			col = c("#D6DBF5", "#B5BFE7", "#94A4D9", "#7388CC", "#526DBE", "#3252B1")),
+		superpose.symbol = list(
+			pch = 19,
+			cex = 0.6,
+			col = c("#D6DBF5", "#B5BFE7", "#94A4D9", "#7388CC", "#526DBE", "#3252B1")),
+		strip.background = list(col = "#D6DBF5")))
 ```
+
+Los números de *weak learners* parece establecer el error alrededor de 100. Un tamaño entre 10 y 30 parece ser necesario para alcanzar la máxima accuracy.
 
 ### Modelo Final
 ```{r, eval=FALSE}
@@ -2293,32 +2410,6 @@ boost <- train(
   	coeflearn=c('Breiman')))
 ```
 
-```{r, eval=FALSE, include=FALSE}
-#comparing error evolution in training and test set
-boost_tterr <- as_data_frame(cbind(
-	test_error=errorevol(boost, Test)$error,
-	train_error=errorevol(boost, upTrain2)$error))
-	apexchart(
-		width = 800,
-		ax_opts = list(
-			chart = list(type = "line"),
-			stroke = list(curve = "smooth"),
-			grid = list(
-				borderColor = "#e7e7e7",
-				row = list(
-					colors = c("#f3f3f3", "transparent"),
-					opacity = 0.5)),
-			markers = list(style = "inverted", size = 4),
-			series = list(
-				list(name = "Accuracy", data = boost_tterr$test_error),
-				list(name = "AUC", data = boost_tterr$train_error)),
-			title = list(text = "Training Results",
-									 align = "center"),
-			xaxis = list(categories = seq(0, 3, by = 0.1)))) %>%
-		ax_yaxis(labels = list(formatter = format_num(".0%"))) %>%
-		ax_stroke(width = 1) %>% 
-	ax_colors("#4B69CE", "#B0BDE9")
-```
 
 ```{r, fig.show="hold", out.width="50%", fig.cap="Boosting Modelo Final", fig.subcap=c("Matriz de confusion","Importancia Variables")}
 
@@ -2339,13 +2430,23 @@ as_tibble(vip::vi(boost)) %>%
     1, 1, 0.5), "cm"))
 ```
 
+El modelo es muy bueno, tiene un accuracy de 0.978 y una *AUC* de 0.993. También nos proporciona las importancias de las variables: 
+
+- El salario siempre está arriba las demás por importancia, aunque notamos con este conjunto restringido que los años total trabajos, los en la empresa y el numero de empresas por el cual has trabajo toman más importancia comparado a los modelos con todas las variables.
+
 ## Stacking
+
+Para realizar el **stacking**, he utilizado el paquete `caretEnseble`. Con este he tenido varios problemas al principio, sobre todo por ajustar los modelos *learners* con los parámetros que quería. Al final he encontrado una solución:
+
+- La función `caretStack` admite también modelos entrenados separadamente, solo si después se convierten en la clase `as.caretList`.
+- Para realizar el *stacking* es necesario establecer un control común para los varío modelos, que especifica los indexes de los *folds* de la validación cruzada, en cuanto tienen que ser comunes para todos los modelos. 
+- Se entrenan los modelos con `train` como siempre, tuneando o fijando los parámetros óptimos si ya se conocen y se juntan en una lista `as.caretList`.
+- Al final se realiza el *stacking* sobre esta lista, decidiendo el algoritmo para realizar el *ensemble* y es posible tunearlo. Aquí también es importante especificar el indice con la respectiva variable dependiente. 
 
 ```{r, eval=FALSE}
 library("caretEnsemble")
 
-stck_control <-
-	trainControl(
+stck_control <- trainControl(
 		method = "cv",
 		number = 5,
 		returnResamp = "all",
@@ -2354,6 +2455,7 @@ stck_control <-
 		index = createMultiFolds(
 			upTrain2$attrition, 5))
 
+# Entrenamos 
 gbm_stck <- train(
 		factor(attrition) ~ .,
 		data = upTrain2,
@@ -2397,15 +2499,12 @@ model_list = as.caretList(list(
 	"svm_rad"=svmR_stck,
 	"gbm"=gbm_stck))
 
-model_preds <- data.frame(
-	lapply(model_list, 
-				 predict, newdata=Test, type="prob"))
-
+# Stacking
 stacking <- caretStack(
 	model_list,
 	method = "gbm",
 	verbose = FALSE,
-	metric="ROC"
+	metric="ROC",
 	tuneGrid = expand.grid(
 			shrinkage = c(0.5,1),
 			n.minobsinnode = c(15,35,50),
@@ -2419,6 +2518,7 @@ stacking <- caretStack(
 		index = createResample(upTrain2$attrition)))
 ```
 
+Vemos una curva ROC para comparar los resultados: 
 ```{r}
 list(
 	"SVM Rad" = roc(svmR_stck$pred$obs,
@@ -2428,8 +2528,8 @@ list(
 	"XGBM" = roc(xgbm_stck$pred$obs,
 							 xgbm_stck$pred$Yes),
 	"Stacking" = roc(stacking$ens_model$pred$obs,
-									 stacking$ens_model$pred$Yes)
-) %>% ggroc(size = 0.7, alpha = 0.9) +
+									 stacking$ens_model$pred$Yes)) %>%
+	ggroc(size = 0.7, alpha = 0.9) +
 	scale_color_manual(
 		name = NULL,
 		values = c(
@@ -2500,10 +2600,41 @@ list(
 		title = element_text(face = "bold")
 	)
 ```
+Como se puede observar de este gráfico comparativo de las curvas ROC, el stacking no ha aportado mejoras a los modelo solos. 
 
-Los stacking no han aportado mejorias a los modelo singolos
+Además se puede notar que los modelos de **GBM** y **XGBM**, esta vez ajustados por el conjunto de datos con las variables más influyentes, son más precisos de los mismos ajustados con todas las variables.
 
 # Conclusion {-}
+
+En conclusión, observamos este gráfico con los distintos valores de *accuracy* según cada técnica.
+
+```{r}
+data.frame(
+	model = c('Stacking', 'Bagging SVM',
+						'SVM Lin', 'XGboost',
+						 'SVM Poli', 'GBM', 
+						'Boosting', 'SVM Rad' ),
+	accuracy = c(47, 76,
+							 77, 92, 
+							 95,96,
+							 98,99)
+) %>%
+	apex(type = "radialBar", height = 500,
+			 aes(x = model, y = accuracy))  %>%
+	ax_labs(title = "Model accuracy for ML models",
+					subtitle = "On selected variables based on overall importance.\nClick on the bar to see results") %>%
+	ax_title(style = list(fontSize = "19px")) %>%
+	ax_subtitle(style = list(fontSize = "14px", color = "#BDBDBD")) %>%
+  ax_colors(
+  	painter::Palette("#D6DBF5", "#3252B1", 10))
+```
+
+<br>
+<div style="background-color:#D6DBF5; border-radius: 10px; padding: 20px;">
+El modelo ganador ha sido el **SVM Radial** con un accuracy del 99% aunque el **Boosting** está justo detrás con 98%.
+</div>
+
+
 # Referencías {-}
 
 ```{r generateBibliography, results="asis", echo=FALSE}
@@ -2512,6 +2643,3 @@ options("citation_format" = "pandoc")
 cite_options(style = "markdown",hyperlink = TRUE)
 read.bibtex("files/stesura/knitcitations.bib")
 ``` 
-
-
-
