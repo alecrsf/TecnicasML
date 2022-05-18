@@ -453,7 +453,9 @@ Por estas razones, quitaré estas variables de mi conjunto de datos.
 data %<>% select(-EmployeeNumber,-EmployeeCount, -Over18, -StandardHours, -TrainingTimesLastYear, -YearsWithCurrManager, -YearsInCurrentRole, -MonthlyRate)
 ```
 
-No emplearé otros algoritmos en cuanto las técnicas de árboles ya desarrollan los modelos sobre las variables más influyentes. También el conjunto de datos está muy bueno para trabajar, así que no necesitaré crear otras variables a partir de las que ya tengo.
+También el conjunto de datos está muy bueno para trabajar, así que no necesitaré crear otras variables a partir de las que ya tengo.
+
+No emplearé otros algoritmos en cuanto las técnicas de árboles ya desarrollan los modelos sobre las variables más influyentes, pero enseguida implementaré otras técnicas de ML spara el conjunto con las variables más importantes.
 
 ## Data Preprocessing
 ### Dummies
@@ -851,7 +853,11 @@ ggplot(
 		)
 ```
 
+Según este árbol de decision, las variables más importantes son el *OverTime_Yes*, que toma mayor importancia comparada con las demás, el total de años trabajando y enseguida encontramos la satisfacción al entorno y el nivel del trabajo y el salario mensual.
+
 El árbol planteado no mejora el modelo de referencia de regresión logística (accuracy = 0.77). Este porque un árbol solo es incline a alta varianza. Por esta razón, implementaré algoritmos de *ensemble methods*.
+
+
 
 ## Bagging Tree
 
@@ -1144,7 +1150,7 @@ El algoritmo **Random Forest**, aprovechando de las ventajas del *bagging*, nos 
 
 Para tunear los parámetros haré un bucle similar a como hecho previamente en la modelización del bagging. En este caso, tendré que tunear también el parámetro `mtry`, el numero de variables a seleccionar cada vez. Este parámetro si lo fijamos al máximo numero de variables, corresponderá a hacer el *bagging*. 
 
-#### Tuneo de `nodesize` y `sampsize`
+#### Tuneo del modelo
 
 ```{r rf_tune, eval=FALSE}
 registerDoParallel(makeCluster(3) -> cpu) 
@@ -1208,6 +1214,18 @@ rf_results = cbind(
 stopCluster(cpu)
 ```
 
+```{r}
+cbind(mtry = linebreak(c(45)),
+			nodesize = c(20),
+			sampsize = c(1570)) %>%
+    kable(format = "html", align = c(rep("l", 4)), bootstrap_options = "basic", 
+ caption = "Best Tune Random Forest") %>%
+    row_spec(0, monospace = T,
+    				 font_size = 14) 
+```
+
+He querido también visualizar las interacciones entre ellos: 
+
 ```{r rf_table, echo= T}
 library(htmltools)
 
@@ -1269,10 +1287,7 @@ columns = list(
   )
 ```
 
-
-Como podemos explorar a partir de la tabla, unos buenos parámetros serían `nodesize=20` y `sampsize=1570`.
-
-#### Tuneo de `mtry`
+Como podemos explorar a partir de la tabla, unos buenos parámetros serían `nodesize=20` y `sampsize=1570`. Ahora miramos le andamiento del `mtry`:
 
 ```{r rf_mtry_tune, fig.cap="Tuneo del mtry"}
 # A partir del output del tuneo, he podido crear este dataframe 
@@ -1651,7 +1666,7 @@ ggplot(aes(
 Aquí las variables más importantes son muy parecidas a las del *GBM*.
 
 ***
-## *Consideraciónes* {-} 
+## *Consideraciones* {-} 
 
 En seguida, este gráfico de cajas y bigotes compara los modelos empleados hasta ahora, con los parametros mejores según cada tuneado. Para ello, en este caso, haré **validación cruzada repetida**. La métrica que he elegido para la comparación es la área abajo de la curva ROC (**AUC**).
 
@@ -1837,11 +1852,13 @@ library(vip)
 inner_join(vi(xgbm), vi(gbm), by = "Variable") %>%
 	inner_join(vi(rf), by = "Variable") %>%
 	inner_join(vi(bg), by = "Variable") %>%
+#	inner_join(vi(arbol), by= "Variable") %>% 
 	rename(
 		"XGBM" = Importance.x,
 		"GBM" = Importance.y,
 		"Random Forest" = Importance.x.x,
-		"Bagging" = Importance.y.y
+		"Bagging" = Importance.y.y,
+#		"Tree" = Importance
 	) %>%
     mutate(
     	Variable = stringr::str_to_title(Variable)) %>%
@@ -1852,18 +1869,20 @@ inner_join(vi(xgbm), vi(gbm), by = "Variable") %>%
 	arrange(desc(Importance)) %>%
 	ggplot(aes(reorder(Variable, Importance),
 						 Importance,
-						 group = Model, fill = Model)) +
+						 group = Model, 
+						 fill = Model)) +
 	geom_chicklet(width = 0.8,
-								radius = grid::unit(2, "pt")) +
+								radius = grid::unit(6, "pt")) +
 	scale_y_continuous(position = "right",
 										 breaks = seq(0,300, by = 50)) +
 	scale_fill_manual(
 		name = NULL,
 		values = c(
-			"XGBM" = "#2E45B8",
-			"GBM" = "#6677CC",
-			"Random Forest" = "#9EA9E0",
-			"Bagging" = "#D6DBF5"
+#			"Tree" = "#D6DBF5",
+			"Bagging" = "#B0B9E7",
+			"Random Forest" = "#8B98D9",
+			"GBM" = "#6576CB",
+			"XGBM" = "#4055BE"
 		)
 	) +
 	guides(fill = guide_legend(nrow = 1)) +
@@ -1874,13 +1893,14 @@ inner_join(vi(xgbm), vi(gbm), by = "Variable") %>%
 		fill = NULL,
 		title = "Importancia variables según cada modelo ",
 		subtitle = "",
-		caption = ""
+		caption = "El árbol de decision no ha sido considerado en cuanto no todas las variables entran en el modelo"
 	) +
-	hrbrthemes::theme_ipsum(base_family = "Times",
-													grid = "Xx") +
+	hrbrthemes::theme_ipsum(base_family = "Times", 
+													grid = "Xx",
+													base_size = 12) +
 	theme(
-		plot.title = element_text(
-															vjust = -1),
+		plot.title = element_text(vjust = -1),
+		legend.text = element_text(size=12),
 		plot.margin = unit(c(0, 1, 1, 0.5), "cm"),
 		legend.position = "top",
 	)
@@ -1896,7 +1916,7 @@ inner_join(vi(xgbm), vi(gbm), by = "Variable") %>%
 **Porque este gráfico es muy importante? Porque a partir de ahora, voy a emplear otras técnicas de machine learning a partir de este conjunto de variables más influyentes a la hora de medir el índice de deserción de los empleados. Seguímos.**
 </div>
 
-### Nuevo conjunto *Test* con variables más influyentes {-}
+### Nuevo conjunto *Train/Test* con variables más influyentes {-}
 
 ```{r}
 upTrain2 <- upTrain %>% select(
@@ -1950,6 +1970,7 @@ Test2 <- Test %>% select(
 ## Support Vector Machines
 ### SVM Lineal
 Como hemos podido ver a partir de la EDA, no hay separacíon lineal entre los datos. Entonces, podemos ya decir que entre los *SVM* que voy a emplear, los con un kernel linel no van a funcionar bien con estos datos.
+
 #### Tuneo del Modelo
 ```{r, eval=FALSE}
 registerDoParallel(makeCluster(3) -> cpu) 
@@ -1969,6 +1990,7 @@ stopCluster(cpu)
 ```
 
 Visualizamos los resultados del tuneo:
+
 ```{r}
 cbind(svm_lin_result$bestTune, getTrainPerf(svm_lin)) %>%
     kable(format = "html", bootstrap_options = "basic",
@@ -2138,6 +2160,7 @@ cbind(svm_rad_result$bestTune,
 ```
 
 Ahora vemos como ha mejorado el tuneo dependiendo del valor de su *sigma*.
+
 ```{r}
 ggplot(subset(
 	svm_rad_result$results),
@@ -2183,6 +2206,7 @@ roc(svm_rad$pred$obs,
 ```
 
 Esta *maquina de suporte vectorial con kernel radial* alcanza las mejores métricas sobre estos datos: 
+
 - Accuracy 0.998 
 - *AUC* 0.998
 
@@ -2251,7 +2275,8 @@ bagging_svm <- BaggingSVM_Lin(
 ```
 
 Ahora comparamos el modelo final *ensemble* con el modelo de *SVM* lineal, a través de la curva ROC.
-```{r B_SVM_ROC, }
+
+```{r B_ROC, eval=FALSE}
 roc.list <- list(
 	`Bagging SVM` = roc(Test2$attrition, bagging_svm),
 	SVM = roc(svm_lin$pred$obs,
@@ -2273,8 +2298,10 @@ dat.ci.list <- lapply(ci.list, function(ciobj)
 		lower = ciobj[, 1],
 		upper = ciobj[, 3]
 	))
-
-p <- ggroc(roc.list,size = 0.7, alpha = 0.9) +
+```
+```{r B_SVM_ROC, }
+p <- ggroc(roc.list,
+					 size = 0.7, alpha = 0.9) +
 	scale_color_manual(name = NULL,
 										 values = c(
 										 	`Bagging SVM` = "#9EA9E0",
@@ -2340,8 +2367,7 @@ for (i in 1:2) {
 	)
 }
 p
-rm(dat.ci.list,ci.list, roc.list, p)
-``` 
+```
 
 Se puede observar que, aunque los valores de la *área abajo de la curva ROC* están parecidos, el modelo *ensemble* no aporta mejorías a el modelo simple.  
 
@@ -2357,6 +2383,7 @@ confusionMatrix(as.factor(
 
 ## Boosting
 Para realizar el **boosting** el flujo de trabajo es parecido a los demás. Se empieza con el tuneo.
+
 ### Tuneo del Modelo
 ```{r, eval=FALSE}
 registerDoParallel(makeCluster(3) -> cpu) 
@@ -2633,7 +2660,6 @@ data.frame(
 <div style="background-color:#D6DBF5; border-radius: 10px; padding: 20px;">
 El modelo ganador ha sido el **SVM Radial** con un accuracy del 99% aunque el **Boosting** está justo detrás con 98%.
 </div>
-
 
 # Referencías {-}
 
